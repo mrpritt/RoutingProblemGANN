@@ -8,15 +8,31 @@ from VRP.VRP_Actor import Model
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-def rollout(model, dataset,n_nodes):
+def rollout(model, dataset, n_nodes, output_file=None):
     model.eval()
-    def eval_model_bat(bat):
-        with torch.no_grad():
-            cost, _ = model(bat, n_nodes * 2,True)
-            cost = reward1(bat.x,cost.detach(), n_nodes)
-        return cost.cpu()
-    totall_cost = torch.cat([eval_model_bat(bat.to(device))for bat in dataset], 0)
-    return totall_cost
+    all_distances = []
+    f = open(output_file, "w") if output_file else None
+
+    with torch.no_grad():
+        for bat in dataset:
+            bat = bat.to(device)
+            routes, _ = model(bat, n_nodes * 2, True)
+            routes = routes.detach()
+            distances = reward1(bat.x, routes, n_nodes)
+            all_distances.append(distances.cpu())
+
+            if f:
+                routes_cpu = routes.cpu()
+                for i in range(routes_cpu.shape[0]):
+                    route = routes_cpu[i].tolist()
+                    dist = distances[i].item()
+                    route_str = " ".join(str(int(node)) for node in route)
+                    f.write(f"{route_str} | {dist:.6f}\n")
+
+    if f:
+        f.close()
+    all_distances = torch.cat(all_distances, 0)
+    return all_distances
 
 def evaliuate(valid_loder,n_node):
     folder = 'trained'
@@ -29,6 +45,8 @@ def evaliuate(valid_loder,n_node):
     if os.path.exists(filepath):
         path1 = os.path.join(filepath, 'actor.pt')
         agent.load_state_dict(torch.load(path1, device))
+    else:
+        print('No trained model found!')
     cost = rollout(agent, valid_loder, n_node)
     cost = cost.mean()
     print('Problem:TSP''%s' % n_node,'/ Average distance:',cost.item())
@@ -81,3 +99,5 @@ def test(n_node):
     evaliuate(dl,n_node)
 
 test(21)
+test(51)
+test(101)
