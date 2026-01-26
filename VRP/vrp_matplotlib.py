@@ -109,9 +109,9 @@ def plot_vehicle_routes(data, route, ax1,Greedy, markersize=5, visualize_demands
 
 def vrp_matplotlib(Greedy=True):
 
-    node_ = np.loadtxt('./test_data/vrp100_test_data.csv', dtype=np.float, delimiter=',')
-    demand_=np.loadtxt('./test_data/vrp100_demand.csv', dtype=np.float, delimiter=',')
-    capcity_=np.loadtxt('./test_data/vrp100_capcity.csv', dtype=np.float, delimiter=',')
+    node_ = np.loadtxt('./test_data/vrp100_test_data.csv', dtype=float, delimiter=',')
+    demand_=np.loadtxt('./test_data/vrp100_demand.csv', dtype=float, delimiter=',')
+    capcity_=np.loadtxt('./test_data/vrp100_capcity.csv', dtype=float, delimiter=',')
     node_,demand_=node_.reshape(-1,n_nodes,2),demand_.reshape(-1,n_nodes)
     data_size = node_.shape[0]
 

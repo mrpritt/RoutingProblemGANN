@@ -1,7 +1,8 @@
 import torch
 import os
 import numpy as np
-from torch_geometric.data import Data, DataLoader
+from torch_geometric.data import Data
+from torch_geometric.loader import DataLoader
 from VRP.creat_vrp import reward1,creat_instance
 from VRP.VRP_Actor import Model
 
@@ -39,9 +40,9 @@ def test(n_node):
     datas = []
 
     if n_node==21 or n_node==51 or n_node==101:
-        node_ = np.loadtxt('./test_data/vrp{}_test_data.csv'.format(n_node-1), dtype=np.float, delimiter=',')
-        demand_ = np.loadtxt('./test_data/vrp{}_demand.csv'.format(n_node-1), dtype=np.float, delimiter=',')
-        capcity_ = np.loadtxt('./test_data/vrp{}_capcity.csv'.format(n_node-1), dtype=np.float, delimiter=',')
+        node_ = np.loadtxt('./VRP/test_data/vrp{}_test_data.csv'.format(n_node-1), dtype=float, delimiter=',')
+        demand_ = np.loadtxt('./VRP/test_data/vrp{}_demand.csv'.format(n_node-1), dtype=float, delimiter=',')
+        capcity_ = np.loadtxt('./VRP/test_data/vrp{}_capcity.csv'.format(n_node-1), dtype=float, delimiter=',')
         batch_size=128
     else:
         print('Please enter 21, 51 or 101')
