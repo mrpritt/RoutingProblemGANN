@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 
@@ -51,7 +52,7 @@ class TrainPPO:
 
         costs = []
         for i in range(self.epoch):
-            print('old_epoch:', i, '***************************************')
+            logging.info('old_epoch: %d ***************************************', i)
             self.agent.old_polic.train()
             times, losses, rewards2, critic_rewards = [], [], [], []
             epoch_start = time.time()
@@ -129,6 +130,8 @@ def train():
         valid_size=[10000]
     )
     runs = RunBuilder.get_runs(params)
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+    logging.info('Starting PPO training for VRP')
 
     for lr, hidden_node_dim, hidden_edge_dim, epoch,batch_size,conv_laysers,entropy_value,eps_clip,timestep,ppo_epoch ,data_size,valid_size in runs:
         print('lr', 'batch_size', 'hidden_node_dim', 'hidden_edge_dim', 'conv_laysers', 'epoch,batch_size',
@@ -136,7 +139,7 @@ def train():
               hidden_edge_dim, epoch, batch_size, conv_laysers, entropy_value, eps_clip, timestep,data_size,valid_size)
         data_loder = creat_data(n_nodes,data_size,batch_size)
         valid_loder = creat_data(n_nodes, valid_size, batch_size)
-        print('DATA CREATED/Problem size:', n_nodes)
+        logging.info('DATA CREATED/Problem size: %s' % n_nodes)
         trainppo = TrainPPO(n_nodes*2,False,lr,3,hidden_node_dim,1,hidden_edge_dim, epoch,batch_size,conv_laysers,entropy_value,eps_clip,timestep,ppo_epoch)
         trainppo.run_train(data_loder,batch_size,valid_loder)
 train()

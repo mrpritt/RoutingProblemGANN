@@ -10,6 +10,6 @@ uv pip install -r requirements.txt
 ## Training
 
 ```
-python -m VRP.PPO_train.py --n_node 21
+CUDA_VISIBLE_DEVICES=1 python -m VRP.PPO_train.py --n_node 21
 ```
 
