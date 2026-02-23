@@ -9,10 +9,26 @@ uv pip install -r requirements.txt
 
 ## Training
 
+The paper reports results using the Rollout algorithm (Section 4.2), noting PPO performs
+slightly less well. Rollout checkpoints are directly compatible with the evaluator (no key
+conversion needed). `n_nodes` is hardcoded to 21 in both trainers; there is no CLI argument.
+
+### Rollout (recommended)
+
 ```
-CUDA_VISIBLE_DEVICES=1 python -m VRP.PPO_train.py
+CUDA_VISIBLE_DEVICES=1 python -m VRP.VRP_Rollout_train
 ```
-# --n_node 21 is ineffective
+
+Saves each epoch to `Vrp-21-GAT/rollout/{epoch}/actor.pt`.
+
+### PPO
+
+```
+CUDA_VISIBLE_DEVICES=1 python -m VRP.PPO_train
+```
+
+Saves each epoch to `vrp-21-GAT/20201125/{epoch}/actor.pt`.
+PPO checkpoints need key conversion before use with the evaluator (see below).
 
 ## Evaluation
 
