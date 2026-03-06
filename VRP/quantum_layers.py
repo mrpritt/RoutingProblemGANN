@@ -47,7 +47,19 @@ class HybridQuantumLinear(nn.Module):
         self.n_layers = n_layers
         self.rotation = rotation
         self.topology = topology
-        self.ansatz = _build_ansatz(ansatz_name)
+        self.ansatz_name = ansatz_name
+        self.ansatz = None
+        self.qml = None
+        self.device = None
+
+        self.input_proj = nn.Linear(input_dim, n_qubits, bias=bias)
+        self.output_proj = nn.Linear(n_qubits, output_dim, bias=bias)
+        self.theta = nn.Parameter(torch.zeros(n_layers, n_qubits, len(_parse_rot_sequence(rotation))))
+        self._qnode = None
+
+    def _ensure_runtime(self):
+        if self._qnode is not None:
+            return
 
         try:
             import pennylane as qml
@@ -57,14 +69,11 @@ class HybridQuantumLinear(nn.Module):
             ) from exc
 
         self.qml = qml
+        self.ansatz = _build_ansatz(self.ansatz_name)
         try:
-            self.device = qml.device("lightning.qubit", wires=n_qubits)
+            self.device = qml.device("lightning.qubit", wires=self.n_qubits)
         except Exception:
-            self.device = qml.device("default.qubit", wires=n_qubits)
-
-        self.input_proj = nn.Linear(input_dim, n_qubits, bias=bias)
-        self.output_proj = nn.Linear(n_qubits, output_dim, bias=bias)
-        self.theta = nn.Parameter(torch.zeros(n_layers, n_qubits, len(_parse_rot_sequence(rotation))))
+            self.device = qml.device("default.qubit", wires=self.n_qubits)
         self._qnode = qml.QNode(self._circuit, self.device, interface="torch")
 
     def _circuit(self, encoded_inputs, theta):
@@ -80,6 +89,7 @@ class HybridQuantumLinear(nn.Module):
         return [self.qml.expval(self.qml.PauliZ(wire)) for wire in range(self.n_qubits)]
 
     def forward(self, x):
+        self._ensure_runtime()
         encoded = torch.tanh(self.input_proj(x)) * torch.pi
         outputs = []
         for sample in encoded:
@@ -87,6 +97,14 @@ class HybridQuantumLinear(nn.Module):
             outputs.append(torch.stack(q_out) if isinstance(q_out, (list, tuple)) else q_out)
         stacked = torch.stack(outputs, dim=0).to(dtype=x.dtype, device=x.device)
         return self.output_proj(stacked)
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state["qml"] = None
+        state["device"] = None
+        state["ansatz"] = None
+        state["_qnode"] = None
+        return state
 
 
 class SwitchableLinear(nn.Module):
