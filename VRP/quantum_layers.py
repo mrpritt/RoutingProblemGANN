@@ -1,6 +1,4 @@
-import importlib.util
 import os
-from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -19,16 +17,9 @@ def decoder_config_from_env():
 
 
 def _load_pce_ansatz():
-    ansatz_path = Path(__file__).resolve().parents[3] / "ansatz" / "pce.py"
-    spec = importlib.util.spec_from_file_location("qgat_ansatz_pce", ansatz_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Unable to load ansatz module from {ansatz_path}")
+    from ansatz.pce import ansatz
 
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    if not hasattr(module, "ansatz"):
-        raise ImportError(f"Ansatz module {ansatz_path} does not define ansatz()")
-    return module.ansatz
+    return ansatz
 
 
 def _build_ansatz(ansatz_name):
