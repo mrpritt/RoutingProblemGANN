@@ -6,6 +6,7 @@ from torch_geometric.utils import remove_self_loops, add_self_loops, softmax
 import math
 from torch.distributions.categorical import Categorical
 from VRP.vrpUpdate import update_mask,update_state
+from VRP.quantum_layers import SwitchableLinear
 INIT = False
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 #device = torch.device('cpu')
@@ -184,7 +185,7 @@ class ProbAttention(nn.Module):
         return scores
 
 class Decoder1(nn.Module):
-    def __init__(self, input_dim, hidden_dim):
+    def __init__(self, input_dim, hidden_dim, decoder_backend='classical', decoder_qnn_config=None):
         super(Decoder1, self).__init__()
 
         super(Decoder1, self).__init__()
@@ -194,7 +195,13 @@ class Decoder1(nn.Module):
         self.prob = ProbAttention(8, input_dim, hidden_dim)
 
         self.fc = nn.Linear(hidden_dim+1, hidden_dim, bias=False)
-        self.fc1 = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        self.fc1 = SwitchableLinear(
+            hidden_dim,
+            hidden_dim,
+            bias=False,
+            backend=decoder_backend,
+            qnn_config=decoder_qnn_config,
+        )
 
         #self._input = nn.Parameter(torch.Tensor(2 * hidden_dim))
         #self._input.data.uniform_(-1, 1)
@@ -263,10 +270,24 @@ class Decoder1(nn.Module):
         return actions, log_p
 
 class Model(nn.Module):
-    def __init__(self, input_node_dim, hidden_node_dim, input_edge_dim, hidden_edge_dim, conv_laysers):
+    def __init__(
+        self,
+        input_node_dim,
+        hidden_node_dim,
+        input_edge_dim,
+        hidden_edge_dim,
+        conv_laysers,
+        decoder_backend='classical',
+        decoder_qnn_config=None,
+    ):
         super(Model, self).__init__()
         self.encoder = Encoder(input_node_dim, hidden_node_dim, input_edge_dim, hidden_edge_dim, conv_laysers)
-        self.decoder = Decoder1(hidden_node_dim, hidden_node_dim)
+        self.decoder = Decoder1(
+            hidden_node_dim,
+            hidden_node_dim,
+            decoder_backend=decoder_backend,
+            decoder_qnn_config=decoder_qnn_config,
+        )
 
     def forward(self, datas,  n_steps,greedy=False,T=1):
         x = self.encoder(datas)  # (batch,seq_len,hidden_node_dim)

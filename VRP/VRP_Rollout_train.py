@@ -8,6 +8,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from VRP.VRP_Actor import Model
 from VRP.creat_vrp import creat_data,reward1
+from VRP.quantum_layers import decoder_config_from_env
 from collections import OrderedDict
 from collections import namedtuple
 from itertools import product
@@ -63,13 +64,22 @@ def train():
 
     folder = 'Vrp-{}-GAT'.format(n_nodes)
     filename = 'rollout'
+    decoder_backend, decoder_qnn_config = decoder_config_from_env()
     for lr,batch_size,hidden_node_dim,hidden_edge_dim,conv_laysers,data_size in runs:
         print('lr','batch_size','hidden_node_dim','hidden_edge_dim','conv_laysers:',lr,batch_size,hidden_node_dim,hidden_edge_dim,conv_laysers)
         data_loder = creat_data(n_nodes, data_size,batch_size=batch_size)
         valid_loder = creat_data(n_nodes, 10000, batch_size=batch_size)
         print('Data creation completed')
 
-        actor = Model(3, hidden_node_dim, 1, hidden_edge_dim, conv_laysers=conv_laysers).to(device)
+        actor = Model(
+            3,
+            hidden_node_dim,
+            1,
+            hidden_edge_dim,
+            conv_laysers=conv_laysers,
+            decoder_backend=decoder_backend,
+            decoder_qnn_config=decoder_qnn_config,
+        ).to(device)
         rol_baseline = RolloutBaseline(actor,valid_loder,n_nodes=steps)
         #initWeights(actor)
         filepath = os.path.join(folder, filename)

@@ -9,6 +9,7 @@ from torch.distributions.categorical import Categorical
 from torch.optim.lr_scheduler import LambdaLR
 import time
 from VRP.vrpUpdate import update_mask, update_state
+from VRP.quantum_layers import SwitchableLinear
 # from PPORolloutBaselin import RolloutBaseline
 from sklearn.preprocessing import MinMaxScaler
 
@@ -194,7 +195,7 @@ class ProbAttention(nn.Module):
 
 
 class Decoder1(nn.Module):
-    def __init__(self, input_dim, hidden_dim):
+    def __init__(self, input_dim, hidden_dim, decoder_backend='classical', decoder_qnn_config=None):
         super(Decoder1, self).__init__()
 
         super(Decoder1, self).__init__()
@@ -204,7 +205,13 @@ class Decoder1(nn.Module):
         self.prob = ProbAttention(8, input_dim, hidden_dim)
 
         self.fc = nn.Linear(hidden_dim + 1, hidden_dim, bias=False)
-        self.fc1 = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        self.fc1 = SwitchableLinear(
+            hidden_dim,
+            hidden_dim,
+            bias=False,
+            backend=decoder_backend,
+            qnn_config=decoder_qnn_config,
+        )
 
         # self._input = nn.Parameter(torch.Tensor(2 * hidden_dim))
         # self._input.data.uniform_(-1, 1)
@@ -342,10 +349,24 @@ class Decoder1(nn.Module):
 
 
 class Model(nn.Module):
-    def __init__(self, input_node_dim, hidden_node_dim, input_edge_dim, hidden_edge_dim, conv_laysers):
+    def __init__(
+        self,
+        input_node_dim,
+        hidden_node_dim,
+        input_edge_dim,
+        hidden_edge_dim,
+        conv_laysers,
+        decoder_backend='classical',
+        decoder_qnn_config=None,
+    ):
         super(Model, self).__init__()
         self.encoder = Encoder(input_node_dim, hidden_node_dim, input_edge_dim, hidden_edge_dim, conv_laysers)
-        self.decoder = Decoder1(hidden_node_dim, hidden_node_dim)
+        self.decoder = Decoder1(
+            hidden_node_dim,
+            hidden_node_dim,
+            decoder_backend=decoder_backend,
+            decoder_qnn_config=decoder_qnn_config,
+        )
 
     def forward(self, datas, actions_old, n_steps, batch_size, greedy, _action):
         x = self.encoder(datas)  # (batch,seq_len,hidden_node_dim)
@@ -388,9 +409,26 @@ class Critic(nn.Module):
 
 
 class Actor_critic(nn.Module):
-    def __init__(self, input_node_dim, hidden_node_dim, input_edge_dim, hidden_edge_dim, conv_laysers):
+    def __init__(
+        self,
+        input_node_dim,
+        hidden_node_dim,
+        input_edge_dim,
+        hidden_edge_dim,
+        conv_laysers,
+        decoder_backend='classical',
+        decoder_qnn_config=None,
+    ):
         super(Actor_critic, self).__init__()
-        self.actor = Model(input_node_dim, hidden_node_dim, input_edge_dim, hidden_edge_dim, conv_laysers)
+        self.actor = Model(
+            input_node_dim,
+            hidden_node_dim,
+            input_edge_dim,
+            hidden_edge_dim,
+            conv_laysers,
+            decoder_backend=decoder_backend,
+            decoder_qnn_config=decoder_qnn_config,
+        )
         self.critic = Critic(hidden_node_dim)
 
     def act(self, datas, actions, steps, batch_size, greedy, _action):
@@ -430,10 +468,26 @@ class Memory:
 
 class Agentppo:
     def __init__(self, steps, greedy, lr, input_node_dim, hidden_node_dim, input_edge_dim, hidden_edge_dim, epoch=1,
-                 batch_size=32, conv_laysers=3, entropy_value=0.2, eps_clip=0.2):
-        self.policy = Actor_critic(input_node_dim, hidden_node_dim, input_edge_dim, hidden_edge_dim, conv_laysers)
-        self.old_polic = Actor_critic(input_node_dim, hidden_node_dim, input_edge_dim, hidden_edge_dim,
-                                      conv_laysers)
+                 batch_size=32, conv_laysers=3, entropy_value=0.2, eps_clip=0.2,
+                 decoder_backend='classical', decoder_qnn_config=None):
+        self.policy = Actor_critic(
+            input_node_dim,
+            hidden_node_dim,
+            input_edge_dim,
+            hidden_edge_dim,
+            conv_laysers,
+            decoder_backend=decoder_backend,
+            decoder_qnn_config=decoder_qnn_config,
+        )
+        self.old_polic = Actor_critic(
+            input_node_dim,
+            hidden_node_dim,
+            input_edge_dim,
+            hidden_edge_dim,
+            conv_laysers,
+            decoder_backend=decoder_backend,
+            decoder_qnn_config=decoder_qnn_config,
+        )
         self.old_polic.load_state_dict(self.policy.state_dict())
 
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=lr)
