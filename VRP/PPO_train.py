@@ -142,4 +142,5 @@ def train():
         logging.info('DATA CREATED/Problem size: %s' % n_nodes)
         trainppo = TrainPPO(n_nodes*2,False,lr,3,hidden_node_dim,1,hidden_edge_dim, epoch,batch_size,conv_laysers,entropy_value,eps_clip,timestep,ppo_epoch)
         trainppo.run_train(data_loder,batch_size,valid_loder)
+    logging.info('Ending PPO training for VRP')
 train()

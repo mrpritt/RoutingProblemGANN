@@ -1,4 +1,5 @@
 import datetime
+import logging
 import numpy as np
 import torch
 import os
@@ -60,6 +61,8 @@ def train():
     )
     runs = RunBuilder.get_runs(params)
     #-------------------------------------------------------------------------------------------------------------------------------------
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+    logging.info('Starting PPO training for VRP')
 
     folder = 'Vrp-{}-GAT'.format(n_nodes)
     filename = 'rollout'
@@ -67,6 +70,7 @@ def train():
         print('lr','batch_size','hidden_node_dim','hidden_edge_dim','conv_laysers:',lr,batch_size,hidden_node_dim,hidden_edge_dim,conv_laysers)
         data_loder = creat_data(n_nodes, data_size,batch_size=batch_size)
         valid_loder = creat_data(n_nodes, 10000, batch_size=batch_size)
+        logging.info('DATA CREATED/Problem size: %s' % n_nodes)
         print('Data creation completed')
 
         actor = Model(3, hidden_node_dim, 1, hidden_edge_dim, conv_laysers=conv_laysers).to(device)
@@ -136,5 +140,6 @@ def train():
 
             print('Problem:TSP''%s' % n_nodes, '/ Average distance:', cost.item())
             print(costs)
+    logging.info('Ending PPO training for VRP')
 
 train()
