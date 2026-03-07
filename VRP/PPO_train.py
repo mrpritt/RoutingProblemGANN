@@ -6,7 +6,7 @@ import torch
 
 from VRP.VRP_PPO_Model import Agentppo,Memory
 from VRP.creat_vrp import creat_data,reward,reward1
-from VRP.quantum_layers import decoder_config_from_env
+from VRP.quantum_layers import decoder_config_from_env, encoder_attn_config_from_env
 from collections import OrderedDict
 from collections import namedtuple
 from itertools import product
@@ -36,6 +36,7 @@ class TrainPPO:
         self.epoch =epoch
         self.memory = Memory()
         decoder_backend, decoder_qnn_config = decoder_config_from_env()
+        encoder_attn_backend, encoder_attn_qnn_config, encoder_attn_qnn_layers = encoder_attn_config_from_env(conv_laysers)
         self.agent = Agentppo(
             steps,
             greedy,
@@ -51,6 +52,9 @@ class TrainPPO:
             eps_clip,
             decoder_backend=decoder_backend,
             decoder_qnn_config=decoder_qnn_config,
+            encoder_attn_backend=encoder_attn_backend,
+            encoder_attn_qnn_config=encoder_attn_qnn_config,
+            encoder_attn_qnn_layers=encoder_attn_qnn_layers,
         )
 
     def run_train(self,data_loader,batch_size,valid_loder):

@@ -9,7 +9,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from VRP.VRP_Actor import Model
 from VRP.creat_vrp import creat_data,reward1
-from VRP.quantum_layers import decoder_config_from_env
+from VRP.quantum_layers import decoder_config_from_env, encoder_attn_config_from_env
 from collections import OrderedDict
 from collections import namedtuple
 from itertools import product
@@ -69,6 +69,7 @@ def train():
     filename = 'rollout'
     decoder_backend, decoder_qnn_config = decoder_config_from_env()
     for lr,batch_size,hidden_node_dim,hidden_edge_dim,conv_laysers,data_size in runs:
+        encoder_attn_backend, encoder_attn_qnn_config, encoder_attn_qnn_layers = encoder_attn_config_from_env(conv_laysers)
         print('lr','batch_size','hidden_node_dim','hidden_edge_dim','conv_laysers:',lr,batch_size,hidden_node_dim,hidden_edge_dim,conv_laysers)
         data_loder = creat_data(n_nodes, data_size,batch_size=batch_size)
         valid_loder = creat_data(n_nodes, 10000, batch_size=batch_size)
@@ -83,6 +84,9 @@ def train():
             conv_laysers=conv_laysers,
             decoder_backend=decoder_backend,
             decoder_qnn_config=decoder_qnn_config,
+            encoder_attn_backend=encoder_attn_backend,
+            encoder_attn_qnn_config=encoder_attn_qnn_config,
+            encoder_attn_qnn_layers=encoder_attn_qnn_layers,
         ).to(device)
         rol_baseline = RolloutBaseline(actor,valid_loder,n_nodes=steps)
         #initWeights(actor)

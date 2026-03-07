@@ -26,7 +26,7 @@ n_nodes = 21
 
 class GatConv(MessagePassing):
     def __init__(self, in_channels, out_channels, edge_channels,
-                 negative_slope=0.2, dropout=0):
+                 negative_slope=0.2, dropout=0, attn_backend='classical', attn_qnn_config=None):
         super(GatConv, self).__init__(aggr='add')
 
         self.in_channels = in_channels
@@ -35,7 +35,13 @@ class GatConv(MessagePassing):
         self.dropout = dropout
 
         self.fc = nn.Linear(in_channels, out_channels)
-        self.attn = nn.Linear(2 * out_channels + edge_channels, out_channels)
+        self.attn = SwitchableLinear(
+            2 * out_channels + edge_channels,
+            out_channels,
+            bias=True,
+            backend=attn_backend,
+            qnn_config=attn_qnn_config,
+        )
         if INIT:
             for name, p in self.named_parameters():
                 if 'weight' in name:
@@ -64,7 +70,18 @@ class GatConv(MessagePassing):
 
 
 class Encoder(nn.Module):
-    def __init__(self, input_node_dim, hidden_node_dim, input_edge_dim, hidden_edge_dim, conv_layers=3, n_heads=4):
+    def __init__(
+        self,
+        input_node_dim,
+        hidden_node_dim,
+        input_edge_dim,
+        hidden_edge_dim,
+        conv_layers=3,
+        n_heads=4,
+        attn_backend='classical',
+        attn_qnn_config=None,
+        attn_qnn_layers=None,
+    ):
         super(Encoder, self).__init__()
         self.hidden_node_dim = hidden_node_dim
         self.fc_node = nn.Linear(input_node_dim, hidden_node_dim)
@@ -73,8 +90,19 @@ class Encoder(nn.Module):
         self.fc_edge = nn.Linear(input_edge_dim, hidden_edge_dim)  # 1-16
         # self.bn = nn.ModuleList([nn.BatchNorm1d(hidden_node_dim) for i in range(conv_layers)])
         # self.convs = nn.ModuleList([GatConv(hidden_node_dim, hidden_node_dim, hidden_edge_dim) for i in range(n_heads)])
+        attn_qnn_layers = attn_qnn_layers or set()
         self.convs1 = nn.ModuleList(
-            [GatConv(hidden_node_dim, hidden_node_dim, hidden_edge_dim) for i in range(conv_layers)])
+            [
+                GatConv(
+                    hidden_node_dim,
+                    hidden_node_dim,
+                    hidden_edge_dim,
+                    attn_backend=attn_backend if i in attn_qnn_layers else 'classical',
+                    attn_qnn_config=attn_qnn_config,
+                )
+                for i in range(conv_layers)
+            ]
+        )
 
         # self.convs = nn.ModuleList([GATConv(hidden_node_dim, hidden_node_dim) for i in range(conv_layers)])
         if INIT:
@@ -358,9 +386,21 @@ class Model(nn.Module):
         conv_laysers,
         decoder_backend='classical',
         decoder_qnn_config=None,
+        encoder_attn_backend='classical',
+        encoder_attn_qnn_config=None,
+        encoder_attn_qnn_layers=None,
     ):
         super(Model, self).__init__()
-        self.encoder = Encoder(input_node_dim, hidden_node_dim, input_edge_dim, hidden_edge_dim, conv_laysers)
+        self.encoder = Encoder(
+            input_node_dim,
+            hidden_node_dim,
+            input_edge_dim,
+            hidden_edge_dim,
+            conv_laysers,
+            attn_backend=encoder_attn_backend,
+            attn_qnn_config=encoder_attn_qnn_config,
+            attn_qnn_layers=encoder_attn_qnn_layers,
+        )
         self.decoder = Decoder1(
             hidden_node_dim,
             hidden_node_dim,
@@ -418,6 +458,9 @@ class Actor_critic(nn.Module):
         conv_laysers,
         decoder_backend='classical',
         decoder_qnn_config=None,
+        encoder_attn_backend='classical',
+        encoder_attn_qnn_config=None,
+        encoder_attn_qnn_layers=None,
     ):
         super(Actor_critic, self).__init__()
         self.actor = Model(
@@ -428,6 +471,9 @@ class Actor_critic(nn.Module):
             conv_laysers,
             decoder_backend=decoder_backend,
             decoder_qnn_config=decoder_qnn_config,
+            encoder_attn_backend=encoder_attn_backend,
+            encoder_attn_qnn_config=encoder_attn_qnn_config,
+            encoder_attn_qnn_layers=encoder_attn_qnn_layers,
         )
         self.critic = Critic(hidden_node_dim)
 
@@ -469,7 +515,9 @@ class Memory:
 class Agentppo:
     def __init__(self, steps, greedy, lr, input_node_dim, hidden_node_dim, input_edge_dim, hidden_edge_dim, epoch=1,
                  batch_size=32, conv_laysers=3, entropy_value=0.2, eps_clip=0.2,
-                 decoder_backend='classical', decoder_qnn_config=None):
+                 decoder_backend='classical', decoder_qnn_config=None,
+                 encoder_attn_backend='classical', encoder_attn_qnn_config=None,
+                 encoder_attn_qnn_layers=None):
         self.policy = Actor_critic(
             input_node_dim,
             hidden_node_dim,
@@ -478,6 +526,9 @@ class Agentppo:
             conv_laysers,
             decoder_backend=decoder_backend,
             decoder_qnn_config=decoder_qnn_config,
+            encoder_attn_backend=encoder_attn_backend,
+            encoder_attn_qnn_config=encoder_attn_qnn_config,
+            encoder_attn_qnn_layers=encoder_attn_qnn_layers,
         )
         self.old_polic = Actor_critic(
             input_node_dim,
@@ -487,6 +538,9 @@ class Agentppo:
             conv_laysers,
             decoder_backend=decoder_backend,
             decoder_qnn_config=decoder_qnn_config,
+            encoder_attn_backend=encoder_attn_backend,
+            encoder_attn_qnn_config=encoder_attn_qnn_config,
+            encoder_attn_qnn_layers=encoder_attn_qnn_layers,
         )
         self.old_polic.load_state_dict(self.policy.state_dict())
 

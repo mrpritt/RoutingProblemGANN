@@ -4,16 +4,27 @@ import torch
 import torch.nn as nn
 
 
-def decoder_config_from_env():
-    backend = os.getenv("QGAT_DECODER_BACKEND", "classical").strip().lower()
-    config = {
+def _qnn_config_from_env():
+    return {
         "ansatz_name": os.getenv("QGAT_QNN_ANSATZ", "pce").strip().lower(),
         "n_qubits": int(os.getenv("QGAT_QNN_QUBITS", "8")),
         "n_layers": int(os.getenv("QGAT_QNN_LAYERS", "4")),
         "rotation": os.getenv("QGAT_QNN_ROTATION", "RXRYRZ").strip(),
         "topology": os.getenv("QGAT_QNN_TOPOLOGY", "brickwall").strip(),
     }
-    return backend, config
+
+
+def decoder_config_from_env():
+    backend = os.getenv("QGAT_DECODER_BACKEND", "classical").strip().lower()
+    return backend, _qnn_config_from_env()
+
+
+def encoder_attn_config_from_env(conv_layers):
+    backend = os.getenv("QGAT_ENCODER_ATTN_BACKEND", "classical").strip().lower()
+    config = _qnn_config_from_env()
+    raw_selector = os.getenv("QGAT_ENCODER_ATTN_LAYERS", "0").strip()
+    selected_layers = parse_layer_selector(raw_selector, conv_layers)
+    return backend, config, selected_layers
 
 
 def _load_pce_ansatz():
@@ -140,3 +151,37 @@ def _parse_rot_sequence(rotation):
     if len(cleaned) % 2 != 0:
         raise ValueError(f"Invalid rotation sequence '{rotation}'")
     return [cleaned[i:i + 2] for i in range(0, len(cleaned), 2)]
+
+
+def parse_layer_selector(selector, num_layers):
+    if selector == "":
+        return set()
+
+    selected = set()
+    for raw_part in selector.split(","):
+        part = raw_part.strip()
+        if not part:
+            continue
+        if "-" not in part:
+            selected.add(_parse_layer_index(part, num_layers))
+            continue
+
+        if part == "-":
+            selected.update(range(num_layers))
+            continue
+
+        start_raw, end_raw = part.split("-", 1)
+        start = 0 if start_raw == "" else _parse_layer_index(start_raw, num_layers)
+        end = num_layers - 1 if end_raw == "" else _parse_layer_index(end_raw, num_layers)
+        if start > end:
+            raise ValueError(f"Invalid layer range '{part}' for {num_layers} layers")
+        selected.update(range(start, end + 1))
+
+    return selected
+
+
+def _parse_layer_index(token, num_layers):
+    index = int(token)
+    if index < 0 or index >= num_layers:
+        raise ValueError(f"Layer index {index} out of range for {num_layers} layers")
+    return index
