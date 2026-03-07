@@ -62,14 +62,14 @@ class HybridQuantumLinear(nn.Module):
         self.ansatz = None
         self.qml = None
         self.device = None
+        self.q_layer = None
 
         self.input_proj = nn.Linear(input_dim, n_qubits, bias=bias)
         self.output_proj = nn.Linear(n_qubits, output_dim, bias=bias)
-        self.theta = nn.Parameter(torch.zeros(n_layers, n_qubits, len(_parse_rot_sequence(rotation))))
-        self._qnode = None
+        self._weight_shape = (n_layers, n_qubits, len(_parse_rot_sequence(rotation)))
 
     def _ensure_runtime(self):
-        if self._qnode is not None:
+        if self.q_layer is not None:
             return
 
         try:
@@ -81,15 +81,22 @@ class HybridQuantumLinear(nn.Module):
 
         self.qml = qml
         self.ansatz = _build_ansatz(self.ansatz_name)
+        diff_method = "backprop"
         try:
             self.device = qml.device("lightning.qubit", wires=self.n_qubits)
+            diff_method = "adjoint"
         except Exception:
             self.device = qml.device("default.qubit", wires=self.n_qubits)
-        self._qnode = qml.QNode(self._circuit, self.device, interface="torch")
+        qnode = qml.QNode(self._circuit, self.device, interface="torch", diff_method=diff_method)
+        self.q_layer = qml.qnn.TorchLayer(
+            qnode,
+            weight_shapes={"theta": self._weight_shape},
+            init_method={"theta": torch.nn.init.zeros_},
+        )
 
-    def _circuit(self, encoded_inputs, theta):
+    def _circuit(self, inputs, theta):
         for wire in range(self.n_qubits):
-            self.qml.RY(encoded_inputs[wire], wires=wire)
+            self.qml.RY(inputs[..., wire], wires=wire)
 
         self.ansatz(
             theta,
@@ -102,11 +109,7 @@ class HybridQuantumLinear(nn.Module):
     def forward(self, x):
         self._ensure_runtime()
         encoded = torch.tanh(self.input_proj(x)) * torch.pi
-        outputs = []
-        for sample in encoded:
-            q_out = self._qnode(sample, self.theta)
-            outputs.append(torch.stack(q_out) if isinstance(q_out, (list, tuple)) else q_out)
-        stacked = torch.stack(outputs, dim=0).to(dtype=x.dtype, device=x.device)
+        stacked = self.q_layer(encoded).to(dtype=x.dtype, device=x.device)
         return self.output_proj(stacked)
 
     def __getstate__(self):
@@ -114,7 +117,7 @@ class HybridQuantumLinear(nn.Module):
         state["qml"] = None
         state["device"] = None
         state["ansatz"] = None
-        state["_qnode"] = None
+        state["q_layer"] = None
         return state
 
 
