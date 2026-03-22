@@ -1,25 +1,32 @@
-import datetime
+import argparse
 import logging
 import numpy as np
 import torch
 import os
 import time
-import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 from VRP.VRP_Actor import Model
 from VRP.creat_vrp import creat_data,reward1
 from VRP.quantum_layers import decoder_config_from_env, encoder_attn_config_from_env
-from collections import OrderedDict
-from collections import namedtuple
-from itertools import product
 from torch.optim.lr_scheduler import LambdaLR
 from VRP.rolloutBaseline1 import RolloutBaseline
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-#device = torch.device('cpu')
-n_nodes = 21
-steps = n_nodes
+
+def get_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--n_nodes',        type=int,   default=21)
+    parser.add_argument('--n_epochs',       type=int,   default=100)
+    parser.add_argument('--batch_size',     type=int,   default=512)
+    parser.add_argument('--data_size',      type=int,   default=768000)
+    parser.add_argument('--val_size',       type=int,   default=10000)
+    parser.add_argument('--lr',             type=float, default=1e-3)
+    parser.add_argument('--hidden_node_dim',type=int,   default=128)
+    parser.add_argument('--hidden_edge_dim',type=int,   default=16)
+    parser.add_argument('--conv_layers',    type=int,   default=4)
+    parser.add_argument('--output_dir',     type=str,   default='results')
+    parser.add_argument('--run_name',       type=str,   default=None)
+    return parser.parse_args()
 def rollout(model, dataset,batch_size, n_nodes):
 
     model.eval()
@@ -42,118 +49,97 @@ def adv_normalize(adv):
     return n_advs
 
 def train():
-    #------------------------------------------------------------------------------------------------------------------------------
-    class RunBuilder():
-        @staticmethod
-        def get_runs(params):
-            Run = namedtuple('Run', params.keys())
-            runs = []
-            for v in product(*params.values()):
-                runs.append(Run(*v))
-            return runs
+    args = get_args()
+    n_nodes = args.n_nodes
+    steps = n_nodes
 
-    params = OrderedDict(
-        lr=[1e-3],
-        batch_size=[512],
-        hidden_node_dim=[128],
-        hidden_edge_dim=[16],
-        conv_laysers=[4],
-        data_size=[768000]
-    )
-    runs = RunBuilder.get_runs(params)
-    #-------------------------------------------------------------------------------------------------------------------------------------
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
     logging.info('Starting PPO training for VRP')
 
-    folder = 'Vrp-{}-GAT'.format(n_nodes)
-    filename = 'rollout'
+    run_name = args.run_name or 'vrp{}_classical_{}'.format(n_nodes, time.strftime('%Y%m%dT%H%M%S'))
+    save_dir = os.path.join(args.output_dir, run_name)
+    os.makedirs(save_dir, exist_ok=True)
+
     decoder_backend, decoder_qnn_config = decoder_config_from_env()
-    for lr,batch_size,hidden_node_dim,hidden_edge_dim,conv_laysers,data_size in runs:
-        encoder_attn_backend, encoder_attn_qnn_config, encoder_attn_qnn_layers = encoder_attn_config_from_env(conv_laysers)
-        print('lr','batch_size','hidden_node_dim','hidden_edge_dim','conv_laysers:',lr,batch_size,hidden_node_dim,hidden_edge_dim,conv_laysers)
-        data_loder = creat_data(n_nodes, data_size,batch_size=batch_size)
-        valid_loder = creat_data(n_nodes, 10000, batch_size=batch_size)
-        logging.info('DATA CREATED/Problem size: %s' % n_nodes)
-        print('Data creation completed')
+    encoder_attn_backend, encoder_attn_qnn_config, encoder_attn_qnn_layers = encoder_attn_config_from_env(args.conv_layers)
 
-        actor = Model(
-            3,
-            hidden_node_dim,
-            1,
-            hidden_edge_dim,
-            conv_laysers=conv_laysers,
-            decoder_backend=decoder_backend,
-            decoder_qnn_config=decoder_qnn_config,
-            encoder_attn_backend=encoder_attn_backend,
-            encoder_attn_qnn_config=encoder_attn_qnn_config,
-            encoder_attn_qnn_layers=encoder_attn_qnn_layers,
-        ).to(device)
-        rol_baseline = RolloutBaseline(actor,valid_loder,n_nodes=steps)
-        #initWeights(actor)
-        filepath = os.path.join(folder, filename)
-        '''path = os.path.join(filepath,'%s' % 3)
-                if os.path.exists(path):
-                    path1 = os.path.join(path, 'actor.pt')
-                    self.agent.old_polic.load_state_dict(torch.load(path1, device))'''
-        actor_optim = optim.Adam(actor.parameters(), lr=lr)
+    print('n_nodes:', n_nodes, 'lr:', args.lr, 'batch_size:', args.batch_size,
+          'data_size:', args.data_size, 'val_size:', args.val_size,
+          'hidden_node_dim:', args.hidden_node_dim, 'hidden_edge_dim:', args.hidden_edge_dim,
+          'conv_layers:', args.conv_layers)
 
-        costs = []
-        for epoch in range(100):
-            print("epoch:",epoch,"------------------------------------------------")
-            actor.train()
+    data_loder = creat_data(n_nodes, args.data_size, batch_size=args.batch_size)
+    valid_loder = creat_data(n_nodes, args.val_size,  batch_size=args.batch_size)
+    logging.info('DATA CREATED/Problem size: %s' % n_nodes)
 
-            times, losses, rewards, critic_rewards = [], [], [], []
-            epoch_start = time.time()
-            start = epoch_start
+    actor = Model(
+        3,
+        args.hidden_node_dim,
+        1,
+        args.hidden_edge_dim,
+        conv_laysers=args.conv_layers,
+        decoder_backend=decoder_backend,
+        decoder_qnn_config=decoder_qnn_config,
+        encoder_attn_backend=encoder_attn_backend,
+        encoder_attn_qnn_config=encoder_attn_qnn_config,
+        encoder_attn_qnn_layers=encoder_attn_qnn_layers,
+    ).to(device)
+    rol_baseline = RolloutBaseline(actor, valid_loder, n_nodes=steps)
+    actor_optim = optim.Adam(actor.parameters(), lr=args.lr)
 
-            scheduler = LambdaLR(actor_optim, lr_lambda=lambda f: 0.96 ** epoch)
-            for batch_idx, batch in enumerate(data_loder):
-                batch = batch.to(device)
-                tour_indices, tour_logp = actor(batch,steps*2)
+    costs = []
+    for epoch in range(args.n_epochs):
+        print("epoch:", epoch, "------------------------------------------------")
+        actor.train()
 
-                rewar = reward1(batch.x, tour_indices.detach(),n_nodes)
-                base_reward = rol_baseline.eval(batch,steps)
+        times, losses, rewards = [], [], []
+        epoch_start = time.time()
+        start = epoch_start
 
-                advantage = (rewar - base_reward)
-                if not advantage.ne(0).any():
-                    print("advantage==0.")
-                advantage = adv_normalize(advantage)
-                actor_loss = torch.mean(advantage.detach() * tour_logp)
+        scheduler = LambdaLR(actor_optim, lr_lambda=lambda f: 0.96 ** epoch)
+        for batch_idx, batch in enumerate(data_loder):
+            batch = batch.to(device)
+            tour_indices, tour_logp = actor(batch, steps * 2)
 
-                actor_optim.zero_grad()
-                actor_loss.backward()
-                #grad_norms = clip_grad_norms(actor_optim.param_groups, 1)
-                #torch.nn.utils.clip_grad_norm_(actor.parameters(), max_grad_norm)
-                actor_optim.step()
-                scheduler.step()
-                rewards.append(torch.mean(rewar.detach()).item())
-                losses.append(torch.mean(actor_loss.detach()).item())
+            rewar = reward1(batch.x, tour_indices.detach(), n_nodes)
+            base_reward = rol_baseline.eval(batch, steps)
 
-                step = 200
-                if (batch_idx + 1) % step == 0:
-                    end = time.time()
-                    times.append(end - start)
-                    start = end
+            advantage = (rewar - base_reward)
+            if not advantage.ne(0).any():
+                print("advantage==0.")
+            advantage = adv_normalize(advantage)
+            actor_loss = torch.mean(advantage.detach() * tour_logp)
 
-                    mean_loss = np.mean(losses[-step:])
-                    mean_reward = np.mean(rewards[-step:])
+            actor_optim.zero_grad()
+            actor_loss.backward()
+            actor_optim.step()
+            scheduler.step()
+            rewards.append(torch.mean(rewar.detach()).item())
+            losses.append(torch.mean(actor_loss.detach()).item())
 
-                    print('  Batch %d/%d, reward: %2.3f, loss: %2.4f, took: %2.4fs' %
-                          (batch_idx, len(data_loder), mean_reward, mean_loss,
-                           times[-1]))
-            rol_baseline.epoch_callback(actor,epoch)
+            step = 200
+            if (batch_idx + 1) % step == 0:
+                end = time.time()
+                times.append(end - start)
+                start = end
+                print('  Batch %d/%d, reward: %2.3f, loss: %2.4f, took: %2.4fs' %
+                      (batch_idx, len(data_loder), np.mean(rewards[-step:]),
+                       np.mean(losses[-step:]), times[-1]))
 
-            epoch_dir = os.path.join(filepath, '%s' % epoch)
-            if not os.path.exists(epoch_dir):
-                os.makedirs(epoch_dir)
-            save_path = os.path.join(epoch_dir, 'actor.pt')
-            torch.save(actor.state_dict(), save_path)
-            cost = rollout(actor, valid_loder, batch_size, steps)
-            cost = cost.mean()
-            costs.append(cost.item())
+        rol_baseline.epoch_callback(actor, epoch)
 
-            print('Problem:TSP''%s' % n_nodes, '/ Average distance:', cost.item())
-            print(costs)
+        epoch_dir = os.path.join(save_dir, 'epoch_%d' % epoch)
+        os.makedirs(epoch_dir, exist_ok=True)
+        torch.save(actor.state_dict(), os.path.join(epoch_dir, 'actor.pt'))
+
+        cost = rollout(actor, valid_loder, args.batch_size, steps).mean()
+        costs.append(cost.item())
+
+        epoch_time = time.time() - epoch_start
+        print('Finished epoch %d, took %s' % (epoch, time.strftime('%H:%M:%S', time.gmtime(epoch_time))))
+        print('Problem: VRP%d / Average distance: %.6f' % (n_nodes, cost.item()))
+        print(costs)
+
     logging.info('Ending PPO training for VRP')
 
 train()
